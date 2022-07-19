@@ -5,8 +5,9 @@ import * as fs from 'fs';
 import path from 'path';
 
 interface IIncomingMessage extends IncomingMessage {
-  formData: {};
-  files: IFile[];
+  [key: string]: any;
+  // formData: {};
+  // files: IFile[];
 }
 
 interface IFile {
@@ -16,23 +17,28 @@ interface IFile {
 }
 
 export class Upfile extends EventEmitter {
-  request: IIncomingMessage;
-  response: OutgoingMessage;
+  request: IIncomingMessage | null = null;
+  response: OutgoingMessage | null = null;
 
-  private _data: Buffer[] = [];
-  private readonly _contentType: string | undefined;
   private readonly _destination: string;
+  private _data: Buffer[] = [];
+  private _contentType: string | undefined;
 
-  constructor(req: IIncomingMessage, res: OutgoingMessage, destination: string) {
+  constructor(destination: string) {
     super();
-    this.request = req;
-    this.response = res;
-    this._contentType = this.request.headers['content-type'];
-
     this._destination = destination;
   }
 
-  parseIncomingBody(): void {
+  parseIncomingBody(request: IIncomingMessage, response: OutgoingMessage): void {
+    this.request = request;
+    this.response = response;
+
+    if (this.request === null || this.response === null) {
+      throw new Error('Make sure there is a request and a response to work with.');
+    }
+
+    this._contentType = this.request.headers['content-type'];
+
     this._validateContentType();
 
     this.request.on('data', (chunk: any): void => {
@@ -49,8 +55,8 @@ export class Upfile extends EventEmitter {
     const boundary = this._contentType!.split('boundary=')[1];
 
     // append files and formData to the request object
-    Object.assign(this.request, { files: [] });
-    Object.assign(this.request, { formData: {} });
+    Object.assign(this.request!, { files: [] });
+    Object.assign(this.request!, { formData: {} });
 
     const starts: number[] = [];
     let start: number = 0;
@@ -71,10 +77,10 @@ export class Upfile extends EventEmitter {
 
         const file: IFile = this._saveFile(name, fileType, parts[1]);
 
-        this.request.files.push(file);
+        this.request!.files.push(file);
       } else {
         name = Upfile._parseFieldName('name=', parts[0]);
-        Object.defineProperty(this.request.formData, name, { value: parts[1] });
+        Object.defineProperty(this.request!.formData, name, { value: parts[1] });
       }
     }
 
