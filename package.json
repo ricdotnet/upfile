@@ -1,13 +1,13 @@
 {
   "name": "@ricdotnet/upfile",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "main": "index.ts",
   "license": "MIT",
   "scripts": {
     "dev": "",
     "dev:prod": "",
     "build": "tsc -b --clean && tsc -b && cp package.json ./dist/package.json && yarn npm:publish",
-    "npm:publish": "cd dist && npm version patch"
+    "npm:publish": "cd dist && npm version patch && npm publish --access=public"
   },
   "devDependencies": {
     "@types/node": "^18.0.6",
@@ -20,5 +20,6 @@
     "email": "me@rrocha.uk",
     "name": "Ricardo Rocha",
     "url": "https://ricr.dev"
-  }
+  },
+  "repository": "https://github.com/ricdotnet/upfile"
 }
