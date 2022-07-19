@@ -1,5 +1,5 @@
 {
-  "name": "upfile",
+  "name": "@ricdotnet/upfile",
   "version": "0.0.0",
   "main": "index.ts",
   "license": "MIT",
