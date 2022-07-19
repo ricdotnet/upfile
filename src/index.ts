@@ -1,8 +1,9 @@
 import { Buffer } from 'buffer';
 import { IncomingMessage, OutgoingMessage } from 'http';
 import { EventEmitter } from 'events';
-import * as fs from 'fs';
-import path from 'path';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
 
 interface IIncomingMessage extends IncomingMessage {
   [key: string]: any;
@@ -46,16 +47,21 @@ export class Upfile extends EventEmitter {
     this.request.on('data', (chunk: any): void => {
       this._data.push(chunk);
     });
-    this.request.on('end', () => {
+    this.request.on('end', async () => {
       // let data = Buffer.concat(this._data).toString('binary');
-      fs.writeFileSync(path.join(process.cwd(), '/tmp/tmp'), Buffer.concat(this._data));
-
-      this._parse(Buffer.concat(this._data));
+      await fs.writeFile(path.join(os.tmpdir(), 'upfile'), Buffer.concat(this._data));
+      this._parse();
     });
   }
 
-  private _parse(data: any): void {
+  private async _parse(): Promise<void> {
     const boundary = this._contentType!.split('boundary=')[1];
+
+    if ( !boundary ) {
+      throw new Error('Invalid boundary.');
+    }
+
+    const data: Buffer = await fs.readFile(path.join(os.tmpdir(), 'upfile'));
 
     // append files and formData to the request object
     Object.assign(this.request!, { files: [] });
@@ -67,7 +73,7 @@ export class Upfile extends EventEmitter {
       start = data.indexOf('--' + boundary, start);
       if ( start === -1 ) break;
       starts.push(start);
-      start++; // this will move the start index one over to search for another boundary start
+      ++start; // this will move the start index one over to search for another boundary start
     }
 
     // todo: refactor
@@ -80,7 +86,7 @@ export class Upfile extends EventEmitter {
         name = Upfile._parseFieldName('filename=', fileInfoParts[0]);
         let fileType = fileInfoParts[1].split('Content-Type: ')[1];
 
-        const file: IFile = this._saveFile(name, fileType, data.slice(starts[i] + header.split('\r\n\r\n')[0].length + ('--' + boundary).length + 6, starts[i + 1]));
+        const file: IFile = await this._saveFile(name, fileType, data.slice(starts[i] + header.split('\r\n\r\n')[0].length + ('--' + boundary).length + 6, starts[i + 1]));
 
         this.request!.files.push(file);
       } else {
@@ -89,17 +95,16 @@ export class Upfile extends EventEmitter {
       }
     }
 
+    await fs.rm(path.join(os.tmpdir(), 'upfile'));
     this.emit('uploaded');
   }
 
-  private _saveFile(name: string, fileType: string, file: any): IFile {
+  private async _saveFile(name: string, fileType: string, file: any): Promise<IFile> {
     let filePath: string = path.join(this._destination, name);
 
-    if ( !fs.existsSync(path.join(process.cwd(), this._destination)) ) {
-      fs.mkdirSync(this._destination, { recursive: true });
-    }
+    await this._verifyFolder();
 
-    fs.writeFileSync(path.join(process.cwd(), filePath), Buffer.from(file), {
+    await fs.writeFile(path.join(process.cwd(), filePath), Buffer.from(file), {
       encoding: 'binary',
     });
 
@@ -108,6 +113,15 @@ export class Upfile extends EventEmitter {
       fileType: fileType,
       file: filePath,
     };
+  }
+
+  private async _verifyFolder(): Promise<void> {
+    try {
+      await fs.access(path.join(process.cwd(), this._destination));
+    } catch (e) {
+      await fs.mkdir(this._destination, { recursive: true });
+    }
+    return Promise.resolve();
   }
 
   private static _parseFieldName(separator: string, field: string): string {
