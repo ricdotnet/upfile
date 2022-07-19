@@ -6,6 +6,7 @@ import path from 'path';
 
 interface IIncomingMessage extends IncomingMessage {
   [key: string]: any;
+
   // formData: {};
   // files: IFile[];
 }
@@ -32,8 +33,9 @@ export class Upfile extends EventEmitter {
   parseIncomingBody(request: IIncomingMessage, response: OutgoingMessage): void {
     this.request = request;
     this.response = response;
+    this._data = []; // reset the buffer
 
-    if (this.request === null || this.response === null) {
+    if ( this.request === null || this.response === null ) {
       throw new Error('Make sure there is a request and a response to work with.');
     }
 
@@ -45,9 +47,10 @@ export class Upfile extends EventEmitter {
       this._data.push(chunk);
     });
     this.request.on('end', () => {
-      let data = Buffer.concat(this._data).toString('binary');
+      // let data = Buffer.concat(this._data).toString('binary');
+      fs.writeFileSync(path.join(process.cwd(), '/tmp/tmp'), Buffer.concat(this._data));
 
-      this._parse(data);
+      this._parse(Buffer.concat(this._data));
     });
   }
 
@@ -67,34 +70,36 @@ export class Upfile extends EventEmitter {
       start++; // this will move the start index one over to search for another boundary start
     }
 
+    // todo: refactor
     for ( let i: number = 0; i < starts.length - 1; i++ ) {
-      const parts: string[] = data.substring(starts[i] + ('--' + boundary).length + 2, starts[i + 1] - 1).split('\r\n\r\n');
+      const header: string = data.slice(starts[i] + ('--' + boundary).length + 2, starts[i] + 512).toString(); // select 512 elements max
+      const parts: string[] = header.substring(0, starts[i] + 512).split('\r\n\r\n');
       let name;
       if ( parts[0].includes('filename') ) {
         const fileInfoParts: string[] = parts[0].split('\r\n');
         name = Upfile._parseFieldName('filename=', fileInfoParts[0]);
         let fileType = fileInfoParts[1].split('Content-Type: ')[1];
 
-        const file: IFile = this._saveFile(name, fileType, parts[1]);
+        const file: IFile = this._saveFile(name, fileType, data.slice(starts[i] + header.split('\r\n\r\n')[0].length + ('--' + boundary).length + 6, starts[i + 1]));
 
         this.request!.files.push(file);
       } else {
         name = Upfile._parseFieldName('name=', parts[0]);
-        Object.defineProperty(this.request!.formData, name, { value: parts[1] });
+        Object.defineProperty(this.request!.formData, name, { value: parts[1].split('\r\n')[0] });
       }
     }
 
     this.emit('uploaded');
   }
 
-  private _saveFile(name: string, fileType: string, file: string): IFile {
+  private _saveFile(name: string, fileType: string, file: any): IFile {
     let filePath: string = path.join(this._destination, name);
 
     if ( !fs.existsSync(path.join(process.cwd(), this._destination)) ) {
       fs.mkdirSync(this._destination, { recursive: true });
     }
 
-    fs.writeFileSync(path.join(process.cwd(), filePath), file, {
+    fs.writeFileSync(path.join(process.cwd(), filePath), Buffer.from(file), {
       encoding: 'binary',
     });
 
