@@ -1,14 +1,13 @@
 import { Buffer } from 'buffer';
-import { OutgoingMessage } from 'http';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { IFile, IIncomingMessage, IUpfileOptions } from './types';
+import { IFile, IUpfileOptions } from './types';
 
 export class Upfile extends EventEmitter {
-  request: IIncomingMessage | null = null;
-  response: OutgoingMessage | null = null;
+  request: any;
+  response: any;
   next: Function | undefined;
 
   options: IUpfileOptions | undefined;
@@ -25,7 +24,7 @@ export class Upfile extends EventEmitter {
     this.options = options;
   }
 
-  parseIncomingBody(request: IIncomingMessage, response: OutgoingMessage, next?: Function): void {
+  parseIncomingBody(request: any, response: any, next?: Function): void {
     this.request = request;
     this.response = response;
     this.next = next;
