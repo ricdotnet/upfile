@@ -14,5 +14,10 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true
-  }
+  },
+  "exclude": [
+    "test",
+    "babel.config.js",
+    "dist/**/*"
+  ]
 }
