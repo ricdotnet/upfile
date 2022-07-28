@@ -7,11 +7,10 @@ else
   exit 1
 fi
 
-echo "# Upfile is building"
-yarn build
-
 echo "# Preparing to publish"
 npm version patch
+echo "# Upfile is building"
+yarn build
 cd dist || exit 1
 echo "# Publishing to npm"
 npm publish --access=public
