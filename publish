@@ -10,7 +10,7 @@ fi
 echo "> Upfile is building"
 yarn build
 
-cd dist || echo "Something went wrong..." && exit 1
+cd dist || exit 1
 
 echo "> Preparing to publish"
 npm version patch
