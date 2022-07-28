@@ -1,6 +1,6 @@
 {
   "name": "@ricdotnet/upfile",
-  "version": "0.0.5-beta.0",
+  "version": "0.0.5",
   "main": "index.js",
   "license": "MIT",
   "scripts": {
