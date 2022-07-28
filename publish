@@ -1,21 +1,18 @@
 #!/bin/bash
 
 if [ "$(git status --porcelain | wc -l)" -eq "0" ]; then
-  echo "> Repo is clean. We can publish!"
+  echo "# Repo is clean. We can publish!"
 else
-  echo "> Repo is not clean. Please clean it."
+  echo "# Repo is not clean. Please clean it."
   exit 1
 fi
 
-echo "> Upfile is building"
+echo "# Upfile is building"
 yarn build
 
-cd dist || exit 1
-
-echo "> Preparing to publish"
+echo "# Preparing to publish"
 npm version patch
-
-echo "> Publishing to npm"
+cd dist || exit 1
+echo "# Publishing to npm"
 npm publish --access=public
-
-echo "> All done!"
+echo "# All done!"
