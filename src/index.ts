@@ -1,39 +1,34 @@
 import { Buffer } from 'buffer';
-import { IncomingMessage, OutgoingMessage } from 'http';
+import { OutgoingMessage } from 'http';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-
-interface IIncomingMessage extends IncomingMessage {
-  [key: string]: any;
-
-  // formData: {};
-  // files: IFile[];
-}
-
-interface IFile {
-  fileName: string;
-  fileType: string;
-  file: string;
-}
+import { IFile, IIncomingMessage, IUpfileOptions } from './types';
 
 export class Upfile extends EventEmitter {
   request: IIncomingMessage | null = null;
   response: OutgoingMessage | null = null;
+  next: Function | undefined;
+
+  options: IUpfileOptions | undefined;
+
+  private static BOUNDARY_ELEMENT_SIZE = 256;
 
   private readonly _destination: string;
   private _data: Buffer[] = [];
   private _contentType: string | undefined;
 
-  constructor(destination: string) {
+  constructor(destination: string, options?: IUpfileOptions) {
     super();
     this._destination = destination;
+    this.options = options;
   }
 
-  parseIncomingBody(request: IIncomingMessage, response: OutgoingMessage): void {
+  parseIncomingBody(request: IIncomingMessage, response: OutgoingMessage, next?: Function): void {
     this.request = request;
     this.response = response;
+    this.next = next;
     this._data = []; // reset the buffer
 
     if ( this.request === null || this.response === null ) {
@@ -48,9 +43,8 @@ export class Upfile extends EventEmitter {
       this._data.push(chunk);
     });
     this.request.on('end', async () => {
-      // let data = Buffer.concat(this._data).toString('binary');
       await fs.writeFile(path.join(os.tmpdir(), 'upfile'), Buffer.concat(this._data));
-      this._parse();
+      await this._parse();
     });
   }
 
@@ -78,29 +72,47 @@ export class Upfile extends EventEmitter {
 
     // todo: refactor
     for ( let i: number = 0; i < starts.length - 1; i++ ) {
-      const header: string = data.slice(starts[i] + ('--' + boundary).length + 2, starts[i] + 512).toString(); // select 512 elements max
-      const parts: string[] = header.substring(0, starts[i] + 512).split('\r\n\r\n');
-      let name;
+      const header: string = Upfile._parseBoundary(data, starts[i], boundary);
+      const parts: string[] = header.substring(0).split('\r\n\r\n');
+      let fileName; // only populated if there is a file
+      let fieldName = Upfile._parseFieldName('name=', parts[0]);
       if ( parts[0].includes('filename') ) {
         const fileInfoParts: string[] = parts[0].split('\r\n');
-        name = Upfile._parseFieldName('filename=', fileInfoParts[0]);
+        fileName = Upfile._parseFieldName('filename=', fileInfoParts[0]);
         let fileType = fileInfoParts[1].split('Content-Type: ')[1];
 
-        const file: IFile = await this._saveFile(name, fileType, data.slice(starts[i] + header.split('\r\n\r\n')[0].length + ('--' + boundary).length + 6, starts[i + 1]));
+        const file: IFile = await this._saveFile(fileName, fileType, fieldName, data.slice(starts[i] + header.split('\r\n\r\n')[0].length + ('--' + boundary).length + 6, starts[i + 1]));
 
         this.request!.files.push(file);
       } else {
-        name = Upfile._parseFieldName('name=', parts[0]);
-        Object.defineProperty(this.request!.formData, name, { value: parts[1].split('\r\n')[0] });
+        // name = Upfile._parseFieldName('name=', parts[0]);
+        Object.defineProperty(this.request!.formData, fieldName, { value: parts[1].split('\r\n')[0] });
       }
     }
 
     await fs.rm(path.join(os.tmpdir(), 'upfile'));
+
+    // if the framework we are using has a next() function we can just pass and call it
+    // like this we do not need to listen/emit the uploaded event
+    if ( this.next !== undefined ) {
+      return this.next();
+    }
+
     this.emit('uploaded');
+    return Promise.resolve();
   }
 
-  private async _saveFile(name: string, fileType: string, file: any): Promise<IFile> {
-    let filePath: string = path.join(this._destination, name);
+  private async _saveFile(name: string, fileType: string, fieldName: string, file: any): Promise<IFile> {
+    const fileExtension: string = '.' + Upfile._fileExtension(name);
+    const fileName: string = Upfile._parseFileName(name, fileExtension);
+
+    let finalName: string = this.options?.custom ? this.options.custom : fileName;
+    if ( this.options && !this.options.custom ) {
+      finalName = this.options.prefix + finalName + this.options.suffix;
+    }
+
+    finalName += fileExtension;
+    let filePath: string = path.join(this._destination, finalName);
 
     await this._verifyFolder();
 
@@ -109,7 +121,9 @@ export class Upfile extends EventEmitter {
     });
 
     return {
-      fileName: name,
+      fieldName: fieldName,
+      originalName: name,
+      fileName: finalName,
       fileType: fileType,
       file: filePath,
     };
@@ -124,11 +138,6 @@ export class Upfile extends EventEmitter {
     return Promise.resolve();
   }
 
-  private static _parseFieldName(separator: string, field: string): string {
-    let name = field.split(separator)[1];
-    return name.substring(1, name.length - 1);
-  }
-
   private _validateContentType(): void {
     if ( typeof this._contentType === 'undefined' || this._contentType === null ) {
       throw new Error('No content-type was defined.');
@@ -137,5 +146,26 @@ export class Upfile extends EventEmitter {
     if ( !this._contentType.includes('multipart/form-data') ) {
       throw new Error('Not a multipart/form-data submission.');
     }
+  }
+
+  private static _parseFieldName(separator: string, field: string): string {
+    let name: string = field.split(separator)[1];
+    return name.substring(1, name.length - 1);
+  }
+
+  // because we are not sure of the size of the file information, we can then grab 256 elements
+  private static _parseBoundary(data: Buffer, start: number, boundary: string): string {
+    return data.slice(start + ('--' + boundary).length + 2, start + Upfile.BOUNDARY_ELEMENT_SIZE).toString();
+  }
+
+  // this is to remove the extension from the file name
+  private static _parseFileName(fullFileName: string, fileExtension: string): string {
+    return fullFileName.split(fileExtension)[0];
+  }
+
+  private static _fileExtension(fileName: string): string {
+    const fileNameParts: string[] = fileName.split('.');
+    return fileNameParts[fileNameParts.length - 1];
+    // return mimeType.split('/')[1];
   }
 }
