@@ -84,9 +84,7 @@ export class Upfile extends EventEmitter {
 
         this.request!.files.push(file);
       } else {
-        // name = Upfile._parseFieldName('name=', parts[0]);
-        // Object.defineProperty(this.request!.formData, fieldName, { value: parts[1].split('\r\n')[0] });
-        this.request!.formData[fieldName] = { value: parts[1].split('\r\n')[0] };
+        this.request!.formData[fieldName] = parts[1].split('\r\n')[0];
       }
     }
 
